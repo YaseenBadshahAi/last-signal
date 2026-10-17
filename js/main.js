@@ -12,7 +12,26 @@ window.GAME = (function () {
   function aliveActors() { return actors.filter(a => a.alive); }
 
   // ---------------- setup ----------------
-  function init() {
+  async function init() {
+    // Load the rigged soldier first (actors need the model bytes)
+    window.LSRig = window.LSRig || {};
+    const menuEl = document.getElementById('menu');
+    const loadingEl = document.createElement('div');
+    loadingEl.id = 'loading-soldier';
+    loadingEl.textContent = 'LOADING SOLDIER…';
+    loadingEl.style.cssText = 'margin-top:18px;color:#67e8f9;letter-spacing:3px;font-size:13px;animation:blink 1.2s infinite';
+    if (menuEl) menuEl.appendChild(loadingEl);
+    if (!window.LSRig.glbBuffer) {
+      try {
+        window.LSRig.glbBuffer = await window.LSGLB.loadBuffer('assets/soldier_rigged.glb');
+      } catch (e) {
+        loadingEl.textContent = 'FAILED TO LOAD SOLDIER MODEL';
+        loadingEl.style.color = '#ff5d5d';
+        throw e;
+      }
+    }
+    if (loadingEl.parentNode) loadingEl.parentNode.removeChild(loadingEl);
+
     const canvas = document.getElementById('game-canvas');
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);

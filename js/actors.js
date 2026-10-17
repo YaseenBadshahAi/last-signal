@@ -1,69 +1,134 @@
-/* LAST SIGNAL — player & AI actors. Procedural low-poly humanoids, no assets. */
+/* LAST SIGNAL — player & AI actors. Rigged GLB soldier + mocap-style clips. */
 (function () {
   const C = window.LS_CONFIG;
 
-  // Wraps the realistic tactical soldier into a game rig:
-  // { group, parts:{muzzle}, hitbox, headBox, mats }.
-  // The model's own updateAnimation drives the walk cycle; animateRig()
-  // below calls it while preserving the actor's terrain height
-  // (the model's bob writes position.y absolutely).
-  function buildSoldierRig(accent) {
-    const g = window.createSoldier(THREE, accent);
-    const ud = g.userData;
+  // Calibrated: gun's -Y end is the muzzle in the Weapon bone's local space.
+  const MUZZLE_LOCAL = { x: 0, y: -0.62, z: 0.03 };
 
-    // Swap the soldier's simple rifle for the detailed tactical rifle.
-    // The tactical model points along -Z; flip it to the soldier's +Z forward.
-    ud.rifle.visible = false;
-    const tac = window.LSRifle.buildTacticalRifle(THREE);
-    tac.group.position.set(0.10, 1.40, 0.38);
-    tac.group.rotation.set(-0.08, Math.PI, -0.06);
-    g.add(tac.group);
+  function findBone(root, name) {
+    let found = null;
+    root.traverse(o => { if (!found && o.name === name) found = o; });
+    return found;
+  }
+
+  // Builds a game rig from the rigged GLB soldier (parsed fresh per actor so
+  // each gets an independent skeleton + mixer):
+  // { group, parts:{muzzle,flashMesh,flashLight}, hitbox, headBox, mats,
+  //   mixer, actions, anim, play(), playOneShot() }
+  function buildSoldierRig(isPlayer) {
+    const model = window.LSGLB.parse(window.LSRig.glbBuffer);
+    const group = new THREE.Group();
+    group.add(model.scene);
+
+    const mixer = new THREE.AnimationMixer(model.scene);
+    const actions = {};
+    model.animations.forEach(clip => {
+      const a = mixer.clipAction(clip);
+      if (clip.name === 'Death') { a.setLoop(THREE.LoopOnce); a.clampWhenFinished = true; }
+      actions[clip.name] = a;
+    });
+    const anim = { current: null, oneShot: null, dead: false };
+    mixer.addEventListener('finished', e => {
+      if (anim.oneShot && e.action === actions[anim.oneShot]) anim.oneShot = null;
+    });
+    function play(name, fade) {
+      const next = actions[name];
+      if (!next || anim.current === next) return;
+      next.reset();
+      next.setEffectiveTimeScale(1);
+      next.setEffectiveWeight(1);
+      next.play();
+      if (anim.current) anim.current.crossFadeTo(next, fade === undefined ? 0.25 : fade, false);
+      anim.current = next;
+    }
+    function playOneShot(name) {
+      const a = actions[name];
+      if (!a || anim.dead) return;
+      anim.oneShot = name;
+      a.reset();
+      a.setLoop(THREE.LoopOnce);
+      a.clampWhenFinished = true;
+      a.setEffectiveWeight(1);
+      if (anim.current && anim.current !== a) anim.current.crossFadeTo(a, 0.1, false);
+      a.play();
+      anim.current = a;
+    }
+    play('Idle', 0);
+
+    // Muzzle + flash parented to the model's Weapon bone (follows the gun).
+    const weaponBone = findBone(model.scene, 'Weapon') || model.scene;
+    const muzzle = new THREE.Object3D();
+    muzzle.position.set(MUZZLE_LOCAL.x, MUZZLE_LOCAL.y, MUZZLE_LOCAL.z);
+    const flashMesh = new THREE.Mesh(
+      new THREE.ConeGeometry(0.085, 0.26, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.95, depthWrite: false }));
+    flashMesh.rotation.z = Math.PI; // cone apex -> bone-local -Y (barrel direction)
+    flashMesh.position.y = -0.12;
+    flashMesh.visible = false;
+    const flashLight = new THREE.PointLight(0xff9b35, 0, 7, 2);
+    muzzle.add(flashMesh);
+    muzzle.add(flashLight);
+    weaponBone.add(muzzle);
 
     const hitbox = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.7, 1.0),
       new THREE.MeshBasicMaterial({ visible: false }));
-    hitbox.position.y = 1.0; g.add(hitbox);
-    const headBox = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.55),
+    hitbox.position.y = 1.0; group.add(hitbox);
+    const headBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5),
       new THREE.MeshBasicMaterial({ visible: false }));
-    headBox.position.y = 1.98; g.add(headBox);
+    headBox.position.y = 1.62; group.add(headBox);
 
-    const mats = new Set();
-    g.traverse(o => {
+    const mats = [];
+    model.scene.traverse(o => {
       if (o.isMesh) {
         const ms = Array.isArray(o.material) ? o.material : [o.material];
-        ms.forEach(m => { if (m && m.emissive) mats.add(m); });
+        ms.forEach(m => {
+          if (m && m.emissive && mats.indexOf(m) < 0) {
+            m.userData.baseEmissive = m.emissive.getHex();
+            m.userData.baseEI = m.emissiveIntensity;
+            mats.push(m);
+          }
+        });
       }
     });
+    if (isPlayer) {
+      // cyan visor accent so the player reads instantly
+      mats.forEach(m => {
+        if (m.name === 'visor_glow') {
+          m.emissive.setHex(0x22e6ff);
+          m.emissiveIntensity = 1.4;
+          m.userData.baseEmissive = 0x22e6ff;
+          m.userData.baseEI = 1.4;
+        }
+      });
+    }
+
     return {
-      group: g,
-      parts: {
-        muzzle: tac.muzzle, flashMesh: tac.flashMesh, flashLight: tac.flashLight,
-        rifle: tac.group, magazine: tac.magazine,
-        rifleBase: { x: 0.10, y: 1.40, z: 0.38 },
-      },
-      hitbox, headBox, mats: Array.from(mats),
-      recoil: 0, flashT: 0,
+      group, model: model.scene,
+      parts: { muzzle, flashMesh, flashLight },
+      hitbox, headBox, mats,
+      mixer, actions, anim, play, playOneShot,
+      flashT: 0,
     };
   }
 
-  function animateRig(rig, dt, moving, sprinting) {
-    const baseY = rig.group.position.y;
-    rig.group.userData.updateAnimation(dt, moving, sprinting);
-    rig.group.position.y = baseY + rig.group.position.y;
-  }
-
-  // Rifle feel: recoil kick, muzzle flash decay, reload dip.
-  // reloadT01: 0..1 progress of reload, or -1 when not reloading.
-  function updateWeaponPose(rig, dt, reloadT01) {
-    rig.recoil = Math.max(0, rig.recoil - dt * 5);
+  // Per-frame animation driver: locomotion crossfades + mixer advance + flash decay.
+  // opts: { dead, moving, sprinting }
+  function updateRigAnim(rig, dt, opts) {
+    rig.mixer.update(dt);
     rig.flashT = Math.max(0, rig.flashT - dt);
-    const rp = rig.parts, rb = rp.rifleBase;
-    rp.rifle.position.z = rb.z + rig.recoil * 0.13;
-    let dip = 0;
-    if (reloadT01 >= 0) dip = Math.sin(reloadT01 * Math.PI);
-    rp.rifle.position.y = rb.y - dip * 0.16;
-    rp.rifle.rotation.x = -0.08 + dip * 0.35;
-    rp.flashMesh.visible = rig.flashT > 0;
-    rp.flashLight.intensity = rig.flashT > 0 ? 6 : 0;
+    rig.parts.flashMesh.visible = rig.flashT > 0;
+    rig.parts.flashLight.intensity = rig.flashT > 0 ? 6 : 0;
+    if (rig.anim.dead) return;
+    if (rig.anim.oneShot) return; // one-shot owns the pose until 'finished'
+    let want = 'Idle';
+    if (opts.dead) want = 'Death';
+    else if (opts.moving) want = opts.sprinting ? 'Run' : 'Walk';
+    if (want === 'Death') {
+      rig.anim.dead = true;
+      rig.playOneShot('Death');
+      return;
+    }
+    rig.play(want);
   }
 
   const _ctarget = new THREE.Vector3(), _cdesired = new THREE.Vector3(),
@@ -73,7 +138,7 @@
   class Player {
     constructor(scene, world) {
       this.world = world;
-      this.rig = buildSoldierRig(0x2e8f9e); // cyan-accented helmet & plate carrier
+      this.rig = buildSoldierRig(true); // cyan visor accent
       scene.add(this.rig.group);
       this.pos = this.rig.group.position;
       this.vel = new THREE.Vector3();
@@ -103,7 +168,7 @@
     speed2D() { return Math.hypot(this.vel.x, this.vel.z); }
 
     update(dt, input, cam) {
-      if (!this.alive) return;
+      if (!this.alive) { this.rig.mixer.update(dt); return; }
       const P = C.player;
       // look
       const sens = this.aiming ? C.camera.aimSens : C.camera.sens;
@@ -139,6 +204,7 @@
       const gh = this.world.groundHeight(this.pos.x, this.pos.z);
       if (this.grounded && input.keys.space) {
         this.vel.y = P.jumpVel; this.grounded = false; input.keys.space = false;
+        this.rig.playOneShot('Jump');
       }
       this.vel.y -= P.gravity * dt;
       this.pos.x += this.vel.x * dt;
@@ -173,10 +239,7 @@
       // pose
       this.rig.group.rotation.y = this.yaw + Math.PI;
       const sp = this.speed2D();
-      animateRig(this.rig, dt, sp > 0.6, sp > 9);
-      const w = this.weapon;
-      updateWeaponPose(this.rig, dt,
-        this.reloading > 0 ? 1 - this.reloading / w.reloadTime : -1);
+      updateRigAnim(this.rig, dt, { dead: !this.alive, moving: sp > 0.6, sprinting: sp > 9 });
 
       // third-person over-shoulder camera
       const dist = this.aiming ? C.camera.aimDist : C.camera.dist;
@@ -216,8 +279,10 @@
       if (this.hp <= 0) { this.hp = 0; this.alive = false; this.die(); }
     }
     die() {
-      this.rig.group.rotation.x = -Math.PI / 2;
-      this.rig.group.position.y = this.world.groundHeight(this.pos.x, this.pos.z) + 0.4;
+      // Death clip takes the pose; keep the body on the ground
+      this.pos.y = this.world.groundHeight(this.pos.x, this.pos.z);
+      this.rig.playOneShot('Death');
+      this.rig.anim.dead = true;
     }
     heal() {
       if (this.medkits > 0 && this.hp < this.maxHp && this.healing <= 0 && this.reloading <= 0) {
@@ -228,6 +293,7 @@
       const w = this.weapon;
       if (this.reloading <= 0 && w.mag < w.magSize && w.reserve > 0) {
         this.reloading = w.reloadTime; SFX.reload();
+        this.rig.playOneShot('Reload');
       }
     }
   }
@@ -291,8 +357,9 @@
       }
       if (this.hp <= 0) {
         this.hp = 0; this.alive = false; this.state = 'dead'; this.deadT = 0;
-        this.rig.group.rotation.x = -Math.PI / 2;
-        this.pos.y = this.world.groundHeight(this.pos.x, this.pos.z) + 0.4;
+        this.pos.y = this.world.groundHeight(this.pos.x, this.pos.z);
+        this.rig.playOneShot('Death');
+        this.rig.anim.dead = true;
         this.rig.hitbox.visible = false; // keep mesh but disable raycast via flag
         this.rig.hitbox.userData.dead = true;
         this.rig.headBox.userData.dead = true;
@@ -312,7 +379,7 @@
     }
 
     update(dt, zone) {
-      if (!this.alive) { this.deadT += dt; return; }
+      if (!this.alive) { this.deadT += dt; this.rig.mixer.update(dt); return; }
       const B = C.bots;
       this.flashT = Math.max(0, this.flashT - dt);
 
@@ -392,13 +459,14 @@
 
       // pose
       this.rig.group.rotation.y = this.yaw + Math.PI;
-      this.rig.group.rotation.x = 0;
       const sp = Math.hypot(this.vel.x, this.vel.z);
-      animateRig(this.rig, dt, sp > 0.8, false);
-      updateWeaponPose(this.rig, dt, -1);
-      // hit flash
+      updateRigAnim(this.rig, dt, { dead: !this.alive, moving: sp > 0.8, sprinting: false });
+      // hit flash (restores each material's base emissive afterwards)
       const f = this.flashT > 0;
-      for (const m of this.rig.mats) m.emissive.setRGB(f ? 0.55 : 0, f ? 0.14 : 0, f ? 0.11 : 0);
+      for (const m of this.rig.mats) {
+        if (f) { m.emissive.setRGB(0.55, 0.14, 0.11); m.emissiveIntensity = 1; }
+        else { m.emissive.setHex(m.userData.baseEmissive); m.emissiveIntensity = m.userData.baseEI; }
+      }
     }
   }
 
