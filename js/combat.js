@@ -32,6 +32,36 @@ window.COMBAT = (function () {
     flashT = 0.06;
   }
 
+  // ---------- ejected shell casings ----------
+  const casings = [];
+  let casingGeo = null, casingMat = null;
+  function ejectCasing(actor) {
+    if (!casingGeo) {
+      casingGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.055, 8);
+      casingMat = new THREE.MeshStandardMaterial({ color: 0xb58b42, metalness: 0.75, roughness: 0.32 });
+    }
+    const casing = new THREE.Mesh(casingGeo, casingMat);
+    actor.rig.parts.muzzle.getWorldPosition(_v2);
+    casing.position.copy(_v2);
+    casing.position.y -= 0.15;
+    casing.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+    scene.add(casing);
+    // eject to the actor's right
+    const ry = actor.yaw || 0;
+    casings.push({
+      mesh: casing,
+      vel: new THREE.Vector3(Math.cos(ry) * 2 + (Math.random() - 0.5), 1.5 + Math.random(), -Math.sin(ry) * 2 + (Math.random() - 0.5)),
+      age: 0, life: 2.2,
+      spin: new THREE.Vector3(9, 12, 7),
+    });
+  }
+
+  function fireWeaponFx(actor) {
+    actor.rig.recoil = 1;
+    actor.rig.flashT = 0.06;
+    ejectCasing(actor);
+  }
+
   function actorMeshes(actors) {
     const arr = [];
     for (const a of actors) {
@@ -85,6 +115,7 @@ window.COMBAT = (function () {
     }
     spawnTracer(from, end, w.tracer);
     flash(from);
+    fireWeaponFx(player);
     player.pitch += w.kick * (player.aiming ? 0.6 : 1);
   }
 
@@ -104,6 +135,7 @@ window.COMBAT = (function () {
       spawnTracer(from, _v3.clone(), 0xff9a5c);
     }
     flash(from);
+    fireWeaponFx(bot);
     if (target === window.GAME.player) SFX.enemyShoot(dist);
   }
 
@@ -198,6 +230,25 @@ window.COMBAT = (function () {
     for (const p of pickups) {
       p.userData.box.rotation.y += dt * 1.6;
       p.position.y = p.userData.baseY + Math.sin(time * 2 + p.userData.phase) * 0.12 + 0.1;
+    }
+    // casings: gravity, bounce, expire
+    for (let i = casings.length - 1; i >= 0; i--) {
+      const c = casings[i];
+      c.age += dt;
+      c.vel.y -= 9.8 * dt;
+      c.mesh.position.addScaledVector(c.vel, dt);
+      c.mesh.rotation.x += c.spin.x * dt;
+      c.mesh.rotation.y += c.spin.y * dt;
+      c.mesh.rotation.z += c.spin.z * dt;
+      const gy = world.groundHeight(c.mesh.position.x, c.mesh.position.z);
+      if (c.mesh.position.y < gy + 0.03) {
+        c.mesh.position.y = gy + 0.03;
+        c.vel.y *= -0.28; c.vel.x *= 0.65; c.vel.z *= 0.65;
+      }
+      if (c.age >= c.life) {
+        scene.remove(c.mesh);
+        casings.splice(i, 1);
+      }
     }
   }
 

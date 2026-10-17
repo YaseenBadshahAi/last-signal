@@ -23,7 +23,7 @@ window.GAME = (function () {
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 1500);
 
-    world = window.LSWorld.build(scene);
+    world = window.LSWorld.build(scene, renderer);
     window.COMBAT.init(scene, world);
     zone = new window.LSZone(scene);
 
@@ -34,7 +34,7 @@ window.GAME = (function () {
     window.UI.showScreen('menu');
 
     // menu cinematic camera
-    camera.position.set(120, 90, 260);
+    camera.position.set(90, 70, 190);
     camera.lookAt(0, 10, 0);
 
     window.addEventListener('resize', () => {
@@ -205,15 +205,17 @@ window.GAME = (function () {
     if (state === 'playing') update(dt);
     else if (state === 'menu') {
       const t = performance.now() * 0.00004;
-      camera.position.set(Math.cos(t) * 300, 110, Math.sin(t) * 300);
+      camera.position.set(Math.cos(t) * 210, 85, Math.sin(t) * 210);
       camera.lookAt(0, 8, 0);
       window.COMBAT.update(dt, elapsed);
+      world.update(dt);
     }
     renderer.render(scene, camera);
   }
 
   function update(dt) {
     elapsed += dt;
+    world.update(dt);
     player.update(dt, input, camera);
     for (const b of bots) b.update(dt, zone);
     zone.update(dt, actors);

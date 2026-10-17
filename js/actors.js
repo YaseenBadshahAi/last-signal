@@ -10,9 +10,14 @@
   function buildSoldierRig(accent) {
     const g = window.createSoldier(THREE, accent);
     const ud = g.userData;
-    const muzzle = new THREE.Object3D();
-    muzzle.position.set(0, 0.015, 0.62); // rifle barrel tip
-    ud.rifle.add(muzzle);
+
+    // Swap the soldier's simple rifle for the detailed tactical rifle.
+    // The tactical model points along -Z; flip it to the soldier's +Z forward.
+    ud.rifle.visible = false;
+    const tac = window.LSRifle.buildTacticalRifle(THREE);
+    tac.group.position.set(0.10, 1.40, 0.38);
+    tac.group.rotation.set(-0.08, Math.PI, -0.06);
+    g.add(tac.group);
 
     const hitbox = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.7, 1.0),
       new THREE.MeshBasicMaterial({ visible: false }));
@@ -28,13 +33,37 @@
         ms.forEach(m => { if (m && m.emissive) mats.add(m); });
       }
     });
-    return { group: g, parts: { muzzle }, hitbox, headBox, mats: Array.from(mats) };
+    return {
+      group: g,
+      parts: {
+        muzzle: tac.muzzle, flashMesh: tac.flashMesh, flashLight: tac.flashLight,
+        rifle: tac.group, magazine: tac.magazine,
+        rifleBase: { x: 0.10, y: 1.40, z: 0.38 },
+      },
+      hitbox, headBox, mats: Array.from(mats),
+      recoil: 0, flashT: 0,
+    };
   }
 
   function animateRig(rig, dt, moving, sprinting) {
     const baseY = rig.group.position.y;
     rig.group.userData.updateAnimation(dt, moving, sprinting);
     rig.group.position.y = baseY + rig.group.position.y;
+  }
+
+  // Rifle feel: recoil kick, muzzle flash decay, reload dip.
+  // reloadT01: 0..1 progress of reload, or -1 when not reloading.
+  function updateWeaponPose(rig, dt, reloadT01) {
+    rig.recoil = Math.max(0, rig.recoil - dt * 5);
+    rig.flashT = Math.max(0, rig.flashT - dt);
+    const rp = rig.parts, rb = rp.rifleBase;
+    rp.rifle.position.z = rb.z + rig.recoil * 0.13;
+    let dip = 0;
+    if (reloadT01 >= 0) dip = Math.sin(reloadT01 * Math.PI);
+    rp.rifle.position.y = rb.y - dip * 0.16;
+    rp.rifle.rotation.x = -0.08 + dip * 0.35;
+    rp.flashMesh.visible = rig.flashT > 0;
+    rp.flashLight.intensity = rig.flashT > 0 ? 6 : 0;
   }
 
   const _ctarget = new THREE.Vector3(), _cdesired = new THREE.Vector3(),
@@ -63,8 +92,8 @@
       this.aiming = false;
       this.kills = 0; this.dmgDealt = 0; this.shots = 0; this.hits = 0;
       this.spawnTime = 0;
-      // spawn on beach, south
-      this.pos.set(30, 0, 235);
+      // spawn on the southern beach
+      this.pos.set(15, 0, 125);
       this.pos.y = world.groundHeight(this.pos.x, this.pos.z);
       this.rig.hitbox.userData.actor = this;
       this.rig.headBox.userData.actor = this;
@@ -117,8 +146,8 @@
       this.pos.y += this.vel.y * dt;
 
       window.LSWorld.resolveCollisions(this.pos, this.radius, this.world.colliders);
-      // keep out of deep water
-      if (this.world.groundHeight(this.pos.x, this.pos.z) < -0.9) {
+      // keep out of deep water (ocean surface at y=2)
+      if (this.world.groundHeight(this.pos.x, this.pos.z) < 0.8) {
         this.pos.x -= this.vel.x * dt; this.pos.z -= this.vel.z * dt;
         this.vel.x *= -0.2; this.vel.z *= -0.2;
       }
@@ -145,6 +174,9 @@
       this.rig.group.rotation.y = this.yaw + Math.PI;
       const sp = this.speed2D();
       animateRig(this.rig, dt, sp > 0.6, sp > 9);
+      const w = this.weapon;
+      updateWeaponPose(this.rig, dt,
+        this.reloading > 0 ? 1 - this.reloading / w.reloadTime : -1);
 
       // third-person over-shoulder camera
       const dist = this.aiming ? C.camera.aimDist : C.camera.dist;
@@ -211,7 +243,7 @@
       scene.add(this.rig.group);
       this.pos = this.rig.group.position;
       this.vel = new THREE.Vector3();
-      const a = Math.random() * Math.PI * 2, r = 90 + Math.random() * 140;
+      const a = Math.random() * Math.PI * 2, r = 60 + Math.random() * 80;
       this.pos.set(Math.cos(a) * r, 0, Math.sin(a) * r);
       this.pos.y = world.groundHeight(this.pos.x, this.pos.z);
       this.hp = C.bots.hp; this.alive = true;
@@ -336,8 +368,8 @@
         } else if (this.pos.distanceTo(this.wanderTarget) < 6 || Math.random() < 0.002) {
           const a = Math.random() * Math.PI * 2, r = Math.random() * B.wanderRadius;
           this.wanderTarget.set(
-            Math.max(-240, Math.min(240, this.pos.x + Math.cos(a) * r)), 0,
-            Math.max(-240, Math.min(240, this.pos.z + Math.sin(a) * r)));
+            Math.max(-140, Math.min(140, this.pos.x + Math.cos(a) * r)), 0,
+            Math.max(-140, Math.min(140, this.pos.z + Math.sin(a) * r)));
         }
         const dx = this.wanderTarget.x - this.pos.x, dzz = this.wanderTarget.z - this.pos.z;
         const d = Math.hypot(dx, dzz) || 1;
@@ -353,7 +385,7 @@
       this.pos.x += this.vel.x * dt;
       this.pos.z += this.vel.z * dt;
       window.LSWorld.resolveCollisions(this.pos, 0.55, this.world.colliders);
-      if (this.world.groundHeight(this.pos.x, this.pos.z) < -0.9) {
+      if (this.world.groundHeight(this.pos.x, this.pos.z) < 0.8) {
         this.pos.x -= this.vel.x * dt * 2; this.pos.z -= this.vel.z * dt * 2;
       }
       this.pos.y = this.world.groundHeight(this.pos.x, this.pos.z);
@@ -363,6 +395,7 @@
       this.rig.group.rotation.x = 0;
       const sp = Math.hypot(this.vel.x, this.vel.z);
       animateRig(this.rig, dt, sp > 0.8, false);
+      updateWeaponPose(this.rig, dt, -1);
       // hit flash
       const f = this.flashT > 0;
       for (const m of this.rig.mats) m.emissive.setRGB(f ? 0.55 : 0, f ? 0.14 : 0, f ? 0.11 : 0);

@@ -1,11 +1,7 @@
 /* LAST SIGNAL — tuning & balance config. All gameplay numbers live here. */
 window.LS_CONFIG = {
   world: {
-    islandRadius: 290,      // playable island radius (world units)
-    terrainSize: 760,       // terrain mesh extent
-    waterLevel: 0,
-    treeCount: 240,
-    rockCount: 46,
+    islandRadius: 180,      // playable island radius (world units)
     crateCount: 40,
   },
 
@@ -70,18 +66,18 @@ window.LS_CONFIG = {
     burstSize: [3, 6],
     burstPause: [0.7, 1.6],
     damage: [7, 13],
-    wanderRadius: 120,
+    wanderRadius: 70,
   },
 
   // Signal Collapse phases: { wait, shrink, radius, dps }
   zone: {
-    startRadius: 270,
+    startRadius: 165,
     phases: [
-      { wait: 45, shrink: 40, radius: 170, dps: 2 },
-      { wait: 30, shrink: 35, radius: 105, dps: 4 },
-      { wait: 25, shrink: 30, radius: 60,  dps: 8 },
-      { wait: 20, shrink: 25, radius: 28,  dps: 14 },
-      { wait: 15, shrink: 20, radius: 8,   dps: 22 },
+      { wait: 45, shrink: 40, radius: 105, dps: 2 },
+      { wait: 30, shrink: 35, radius: 65,  dps: 4 },
+      { wait: 25, shrink: 30, radius: 38,  dps: 8 },
+      { wait: 20, shrink: 25, radius: 18,  dps: 14 },
+      { wait: 15, shrink: 20, radius: 6,   dps: 22 },
     ],
   },
 

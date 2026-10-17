@@ -9,11 +9,11 @@ window.UI = (function () {
   const mm = $('minimap').getContext('2d');
 
   function drawMinimap(player, bots, zone) {
-    const S = 170, R = S / 2, scale = R / 310;
+    const S = 170, R = S / 2, scale = R / 200;
     mm.clearRect(0, 0, S, S);
     // island
     mm.fillStyle = 'rgba(20,34,26,.9)';
-    mm.beginPath(); mm.arc(R, R, 290 * scale, 0, 7); mm.fill();
+    mm.beginPath(); mm.arc(R, R, 180 * scale, 0, 7); mm.fill();
     mm.strokeStyle = 'rgba(120,160,130,.5)'; mm.stroke();
     const px = x => R + x * scale, pz = z => R + z * scale;
     // zone rings
