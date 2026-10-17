@@ -2,62 +2,39 @@
 (function () {
   const C = window.LS_CONFIG;
 
-  function mat(color) { return new THREE.MeshStandardMaterial({ color, roughness: 0.85 }); }
+  // Wraps the realistic tactical soldier into a game rig:
+  // { group, parts:{muzzle}, hitbox, headBox, mats }.
+  // The model's own updateAnimation drives the walk cycle; animateRig()
+  // below calls it while preserving the actor's terrain height
+  // (the model's bob writes position.y absolutely).
+  function buildSoldierRig(accent) {
+    const g = window.createSoldier(THREE, accent);
+    const ud = g.userData;
+    const muzzle = new THREE.Object3D();
+    muzzle.position.set(0, 0.015, 0.62); // rifle barrel tip
+    ud.rifle.add(muzzle);
 
-  // Builds a simple rigged-looking humanoid from boxes. Returns refs for animation.
-  function buildHumanoid(scheme) {
-    const g = new THREE.Group();
-    const parts = {};
-    const mTorso = mat(scheme.torso), mLimb = mat(scheme.limbs),
-          mHead = mat(scheme.head), mPack = mat(scheme.pack);
-
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.78, 0.36), mTorso);
-    torso.position.y = 1.32; g.add(torso); parts.torso = torso;
-
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.36, 0.34), mHead);
-    head.position.y = 1.92; g.add(head); parts.head = head;
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 0.05), mat(0x14181c));
-    visor.position.set(0, 1.94, 0.18); g.add(visor);
-
-    const pack = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.55, 0.22), mPack);
-    pack.position.set(0, 1.38, -0.29); g.add(pack);
-
-    function limb(w, h, x, y) {
-      const pivot = new THREE.Group(); pivot.position.set(x, y, 0);
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), mLimb);
-      m.position.y = -h / 2; m.castShadow = true; pivot.add(m); g.add(pivot);
-      return pivot;
-    }
-    parts.legL = limb(0.24, 0.9, -0.17, 0.95);
-    parts.legR = limb(0.24, 0.9, 0.17, 0.95);
-    parts.armL = limb(0.17, 0.72, -0.41, 1.66);
-    parts.armR = limb(0.17, 0.72, 0.41, 1.66);
-    // arms hold gun forward
-    parts.armL.rotation.x = -1.15; parts.armR.rotation.x = -1.15;
-
-    const gun = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.14, 0.85), mat(0x23272b));
-    gun.position.set(0.18, 1.32, 0.5); g.add(gun); parts.gun = gun;
-    parts.muzzle = new THREE.Object3D(); parts.muzzle.position.set(0.18, 1.36, 0.95); g.add(parts.muzzle);
-
-    g.traverse(o => { if (o.isMesh) o.castShadow = true; });
-
-    // invisible hitboxes for hitscan
     const hitbox = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.7, 1.0),
       new THREE.MeshBasicMaterial({ visible: false }));
     hitbox.position.y = 1.0; g.add(hitbox);
-    const headBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5),
+    const headBox = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.55),
       new THREE.MeshBasicMaterial({ visible: false }));
-    headBox.position.y = 1.92; g.add(headBox);
-    return { group: g, parts, hitbox, headBox };
+    headBox.position.y = 1.98; g.add(headBox);
+
+    const mats = new Set();
+    g.traverse(o => {
+      if (o.isMesh) {
+        const ms = Array.isArray(o.material) ? o.material : [o.material];
+        ms.forEach(m => { if (m && m.emissive) mats.add(m); });
+      }
+    });
+    return { group: g, parts: { muzzle }, hitbox, headBox, mats: Array.from(mats) };
   }
 
-  function animateWalk(rig, phase, intensity) {
-    const s = Math.sin(phase) * 0.65 * intensity;
-    rig.parts.legL.rotation.x = s;
-    rig.parts.legR.rotation.x = -s;
-    rig.parts.armL.rotation.x = -1.15 - s * 0.35;
-    rig.parts.armR.rotation.x = -1.15 + s * 0.35;
-    rig.group.position.y += Math.abs(Math.sin(phase)) * 0.05 * intensity;
+  function animateRig(rig, dt, moving, sprinting) {
+    const baseY = rig.group.position.y;
+    rig.group.userData.updateAnimation(dt, moving, sprinting);
+    rig.group.position.y = baseY + rig.group.position.y;
   }
 
   const _ctarget = new THREE.Vector3(), _cdesired = new THREE.Vector3(),
@@ -67,7 +44,7 @@
   class Player {
     constructor(scene, world) {
       this.world = world;
-      this.rig = buildHumanoid({ torso: 0x2e3b46, limbs: 0x232b33, head: 0xc9a186, pack: 0x67e8f9 });
+      this.rig = buildSoldierRig(0x2e8f9e); // cyan-accented helmet & plate carrier
       scene.add(this.rig.group);
       this.pos = this.rig.group.position;
       this.vel = new THREE.Vector3();
@@ -76,7 +53,6 @@
       this.alive = true;
       this.radius = C.player.radius;
       this.grounded = true;
-      this.walkPhase = 0;
       this.weapons = [Object.assign({}, C.weapons.pistol)];
       this.weapons[0].mag = this.weapons[0].magSize;
       this.weapons[0].reserve = this.weapons[0].reserveStart;
@@ -168,9 +144,7 @@
       // pose
       this.rig.group.rotation.y = this.yaw + Math.PI;
       const sp = this.speed2D();
-      this.walkPhase += dt * (4 + sp * 1.6);
-      animateWalk(this.rig, this.walkPhase, Math.min(1, sp / P.walkSpeed));
-      if (!this.grounded) { this.rig.parts.legL.rotation.x = 0.5; this.rig.parts.legR.rotation.x = -0.3; }
+      animateRig(this.rig, dt, sp > 0.6, sp > 9);
 
       // third-person over-shoulder camera
       const dist = this.aiming ? C.camera.aimDist : C.camera.dist;
@@ -228,18 +202,12 @@
 
   // ---------------- BOT ----------------
   const BOT_NAMES = ['Vex', 'Mara', 'Koda', 'Rook', 'Sable', 'Juno', 'Pip', 'Ash'];
-  const BOT_SKINS = [
-    { torso: 0x5a6b3f, limbs: 0x3d4a2c, head: 0xc9a186, pack: 0x4a5548 },
-    { torso: 0x4a4f55, limbs: 0x33373c, head: 0xa87c5f, pack: 0x5a5f66 },
-    { torso: 0x8a7355, limbs: 0x5f5140, head: 0xdba98c, pack: 0x6b5f43 },
-    { torso: 0x3f5a5a, limbs: 0x2c3f3f, head: 0xb08a68, pack: 0x445555 },
-  ];
 
   class Bot {
     constructor(scene, world, idx, actors) {
       this.world = world; this.actors = actors;
       this.name = BOT_NAMES[idx % BOT_NAMES.length];
-      this.rig = buildHumanoid(BOT_SKINS[idx % BOT_SKINS.length]);
+      this.rig = buildSoldierRig();
       scene.add(this.rig.group);
       this.pos = this.rig.group.position;
       this.vel = new THREE.Vector3();
@@ -255,7 +223,6 @@
       this.shootT = 1 + Math.random() * 2;
       this.burstLeft = 0;
       this.strafeDir = 1; this.strafeT = 0;
-      this.walkPhase = Math.random() * 6;
       this.flashT = 0;
       this.weapon = { damage: 10, range: C.bots.engageRange };
       this.rig.hitbox.userData.actor = this;
@@ -395,11 +362,10 @@
       this.rig.group.rotation.y = this.yaw + Math.PI;
       this.rig.group.rotation.x = 0;
       const sp = Math.hypot(this.vel.x, this.vel.z);
-      this.walkPhase += dt * (4 + sp * 1.6);
-      animateWalk(this.rig, this.walkPhase, Math.min(1, sp / 6));
+      animateRig(this.rig, dt, sp > 0.8, false);
       // hit flash
-      const f = this.flashT > 0 ? 0.55 : 0;
-      this.rig.parts.torso.material.emissive.setRGB(f, f * 0.25, f * 0.2);
+      const f = this.flashT > 0;
+      for (const m of this.rig.mats) m.emissive.setRGB(f ? 0.55 : 0, f ? 0.14 : 0, f ? 0.11 : 0);
     }
   }
 
