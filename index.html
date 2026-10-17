@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LAST SIGNAL — Vesper Island</title>
+<link rel="stylesheet" href="css/style.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+<div id="game-root">
+  <canvas id="game-canvas"></canvas>
+
+  <!-- In-match HUD -->
+  <div id="hud" class="hidden">
+    <div id="crosshair"><div class="ch-dot"></div></div>
+    <div id="hitmarker"></div>
+    <div id="damage-vignette"></div>
+
+    <div id="hud-top">
+      <div id="zone-panel">
+        <div id="zone-label">SIGNAL COLLAPSE</div>
+        <div id="zone-timer">--</div>
+      </div>
+      <div id="alive-panel"><span id="alive-count">8</span> ALIVE</div>
+    </div>
+
+    <div id="killfeed"></div>
+
+    <div id="hud-bottom-left">
+      <div id="health-bar"><div id="health-fill"></div></div>
+      <div id="health-num">100</div>
+    </div>
+
+    <div id="hud-bottom-right">
+      <canvas id="minimap" width="170" height="170"></canvas>
+      <div id="ammo-panel">
+        <div id="weapon-name">PISTOL</div>
+        <div id="ammo"><span id="ammo-mag">12</span><span id="ammo-reserve">/ 48</span></div>
+      </div>
+      <div id="slots">
+        <div class="slot" id="slot-0"><span class="slot-key">1</span><span class="slot-name">PISTOL</span></div>
+        <div class="slot empty" id="slot-1"><span class="slot-key">2</span><span class="slot-name">—</span></div>
+        <div class="slot" id="slot-heal"><span class="slot-key">H</span><span class="slot-name">MEDKIT ×<span id="medkits">0</span></span></div>
+      </div>
+    </div>
+
+    <div id="interact-prompt" class="hidden">Press <b>E</b> — <span id="interact-name"></span></div>
+    <div id="center-msg" class="hidden"></div>
+  </div>
+
+  <!-- Main menu -->
+  <div id="menu-screen" class="screen">
+    <div class="menu-card">
+      <div class="game-logo">LAST <span>SIGNAL</span></div>
+      <div class="game-sub">VESPER ISLAND &mdash; SURVIVAL PROTOTYPE</div>
+      <p class="menu-desc">Drop onto the island, loot supplies, outfight 7 AI opponents and survive the Signal Collapse. Last one standing wins.</p>
+      <div class="controls-grid">
+        <div><b>WASD</b> move</div><div><b>Mouse</b> look</div>
+        <div><b>Shift</b> sprint</div><div><b>Space</b> jump</div>
+        <div><b>Click</b> fire</div><div><b>RMB</b> aim</div>
+        <div><b>E</b> pick up</div><div><b>R</b> reload</div>
+        <div><b>1 / 2</b> weapons</div><div><b>H</b> use medkit</div>
+      </div>
+      <button id="btn-play" class="btn-primary">DEPLOY</button>
+      <div id="menu-note">Desktop + mouse required. Click DEPLOY, then click the game to lock aim.</div>
+    </div>
+  </div>
+
+  <!-- Pause -->
+  <div id="pause-screen" class="screen hidden">
+    <div class="menu-card">
+      <div class="game-logo small">PAUSED</div>
+      <button id="btn-resume" class="btn-primary">RESUME</button>
+      <button id="btn-quit" class="btn-ghost">ABANDON MATCH</button>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="result-screen" class="screen hidden">
+    <div class="menu-card">
+      <div class="game-logo small" id="result-title">VICTORY</div>
+      <div class="game-sub" id="result-sub">#1 of 8</div>
+      <div id="result-stats"></div>
+      <button id="btn-again" class="btn-primary">PLAY AGAIN</button>
+      <button id="btn-menu" class="btn-ghost">MAIN MENU</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/world.js"></script>
+<script src="js/actors.js"></script>
+<script src="js/combat.js"></script>
+<script src="js/zone.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
